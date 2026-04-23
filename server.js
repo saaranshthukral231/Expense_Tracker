@@ -118,25 +118,33 @@ async function readJsonBody(request) {
 }
 
 function serveStaticAsset(response, publicDir, requestPath) {
-  const safeRequestPath = requestPath === '/' ? '/index.html' : requestPath;
-  const resolvedPublicDir = path.resolve(publicDir);
-  const assetPath = path.resolve(resolvedPublicDir, `.${safeRequestPath}`);
-
-  if (assetPath !== resolvedPublicDir && !assetPath.startsWith(`${resolvedPublicDir}${path.sep}`)) {
-    throw new HttpError(403, 'Forbidden.');
-  }
-
-  if (!fs.existsSync(assetPath) || fs.statSync(assetPath).isDirectory()) {
-    throw new HttpError(404, 'File not found.');
-  }
-
-  const extension = path.extname(assetPath);
-  const contentType = STATIC_FILE_TYPES[extension] || 'application/octet-stream';
-
-  response.writeHead(200, {
-    'Content-Type': contentType,
-  });
-  response.end(fs.readFileSync(assetPath));
+  const safeRequestPath = requestPath === '/' ? '/index.html' : requestPath;
+  const resolvedPublicDir = path.resolve(publicDir);
+  
+  // Changed from 'const' to 'let' so we can modify it below
+  let assetPath = path.resolve(resolvedPublicDir, .${safeRequestPath});
+ 
+  if (assetPath !== resolvedPublicDir && !assetPath.startsWith(${resolvedPublicDir}${path.sep})) {
+    throw new HttpError(403, 'Forbidden.');
+  }
+ 
+  // If the path exists but it is a directory, look for index.html inside it.
+  if (fs.existsSync(assetPath) && fs.statSync(assetPath).isDirectory()) {
+    assetPath = path.join(assetPath, 'index.html');
+  }
+ 
+  // Now, if the file STILL doesn't exist, throw the error.
+  if (!fs.existsSync(assetPath)) {
+    throw new HttpError(404, 'File not found.');
+  }
+ 
+  const extension = path.extname(assetPath);
+  const contentType = STATIC_FILE_TYPES[extension] || 'application/octet-stream';
+ 
+  response.writeHead(200, {
+    'Content-Type': contentType,
+  });
+  response.end(fs.readFileSync(assetPath));
 }
 
 function sendJson(response, statusCode, payload) {
