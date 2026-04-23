@@ -1,24 +1,162 @@
+const fs = require('node:fs');
+const http = require('node:http');
 const path = require('node:path');
 
-const { ExpenseStore } = require('./src/expense-store');
-const { createExpenseTrackerServer } = require('./src/server');
+const { ValidationError, hashExpenseInput, normalizeExpenseInput } = require('./expense-service');
 
-const port = Number(process.env.PORT || 3000);
-const dataFilePath = path.join(__dirname, 'data', 'expenses.json');
-const publicDir = path.join(__dirname, 'public');
+const STATIC_FILE_TYPES = {
+  '.css': 'text/css; charset=utf-8',
+  '.html': 'text/html; charset=utf-8',
+  '.js': 'application/javascript; charset=utf-8',
+  '.json': 'application/json; charset=utf-8',
+};
 
-const store = new ExpenseStore(dataFilePath);
-const server = createExpenseTrackerServer({ store, publicDir });
+class HttpError extends Error {
+  constructor(statusCode, message) {
+    super(message);
+    this.name = 'HttpError';
+    this.statusCode = statusCode;
+  }
+}
 
-server.listen(port, () => {
-  console.log(`Expense Tracker running at http://localhost:${port}`);
-});
+function createExpenseTrackerServer({ store, publicDir }) {
+  return http.createServer(async (request, response) => {
+    try {
+      const url = new URL(request.url, 'http://localhost');
 
-function shutdown() {
-  server.close(() => {
-    process.exit(0);
+      if (request.method === 'GET' && url.pathname === '/expenses') {
+        return handleListExpenses(response, store, url.searchParams);
+      }
+
+      if (request.method === 'POST' && url.pathname === '/expenses') {
+        return handleCreateExpense(request, response, store);
+      }
+
+      if (request.method === 'GET') {
+        return serveStaticAsset(response, publicDir, url.pathname);
+      }
+
+      throw new HttpError(404, 'Route not found.');
+    } catch (error) {
+      handleError(response, error);
+    }
   });
 }
 
-process.on('SIGINT', shutdown);
-process.on('SIGTERM', shutdown);
+async function handleCreateExpense(request, response, store) {
+  const idempotencyKey = request.headers['idempotency-key'];
+
+  if (typeof idempotencyKey !== 'string' || !idempotencyKey.trim()) {
+    throw new HttpError(400, 'Idempotency-Key header is required.');
+  }
+
+  const body = await readJsonBody(request);
+  const normalizedExpense = normalizeExpenseInput(body);
+  const requestHash = hashExpenseInput(normalizedExpense);
+  const result = store.createExpense(normalizedExpense, idempotencyKey.trim(), requestHash);
+
+  if (result.conflict) {
+    sendJson(response, 409, {
+      error: result.message,
+    });
+    return;
+  }
+
+  sendJson(response, result.replayed ? 200 : 201, {
+    expense: store.serializeExpense(result.expense),
+    replayed: result.replayed,
+  });
+}
+
+function handleListExpenses(response, store, searchParams) {
+  const category = searchParams.get('category') || '';
+  const sort = searchParams.get('sort') || '';
+
+  if (sort && sort !== 'date_desc') {
+    throw new HttpError(400, 'Only sort=date_desc is supported.');
+  }
+
+  const result = store.listExpenses({ category, sort });
+
+  sendJson(response, 200, {
+    available_categories: result.availableCategories,
+    expenses: result.expenses,
+    total_amount: result.totalAmount,
+  });
+}
+
+async function readJsonBody(request) {
+  return new Promise((resolve, reject) => {
+    let rawBody = '';
+
+    request.setEncoding('utf8');
+
+    request.on('data', (chunk) => {
+      rawBody += chunk;
+
+      if (rawBody.length > 1_000_000) {
+        reject(new HttpError(413, 'Request body is too large.'));
+        request.destroy();
+      }
+    });
+
+    request.on('end', () => {
+      if (!rawBody.trim()) {
+        reject(new ValidationError('Request body is required.'));
+        return;
+      }
+
+      try {
+        resolve(JSON.parse(rawBody));
+      } catch (error) {
+        reject(new HttpError(400, 'Request body must contain valid JSON.'));
+      }
+    });
+
+    request.on('error', reject);
+  });
+}
+
+function serveStaticAsset(response, publicDir, requestPath) {
+  const safeRequestPath = requestPath === '/' ? '/index.html' : requestPath;
+  const resolvedPublicDir = path.resolve(publicDir);
+  const assetPath = path.resolve(resolvedPublicDir, `.${safeRequestPath}`);
+
+  if (assetPath !== resolvedPublicDir && !assetPath.startsWith(`${resolvedPublicDir}${path.sep}`)) {
+    throw new HttpError(403, 'Forbidden.');
+  }
+
+  if (!fs.existsSync(assetPath) || fs.statSync(assetPath).isDirectory()) {
+    throw new HttpError(404, 'File not found.');
+  }
+
+  const extension = path.extname(assetPath);
+  const contentType = STATIC_FILE_TYPES[extension] || 'application/octet-stream';
+
+  response.writeHead(200, {
+    'Content-Type': contentType,
+  });
+  response.end(fs.readFileSync(assetPath));
+}
+
+function sendJson(response, statusCode, payload) {
+  response.writeHead(statusCode, {
+    'Cache-Control': 'no-store',
+    'Content-Type': 'application/json; charset=utf-8',
+  });
+  response.end(JSON.stringify(payload));
+}
+
+function handleError(response, error) {
+  const statusCode = Number(error.statusCode) || 500;
+  const message =
+    statusCode >= 500 ? 'Unexpected server error.' : error.message || 'Request failed.';
+
+  sendJson(response, statusCode, {
+    error: message,
+  });
+}
+
+module.exports = {
+  createExpenseTrackerServer,
+};
