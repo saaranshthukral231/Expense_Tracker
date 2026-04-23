@@ -126,9 +126,19 @@ function serveStaticAsset(response, publicDir, requestPath) {
     throw new HttpError(403, 'Forbidden.');
   }
 
-  if (!fs.existsSync(assetPath) || fs.statSync(assetPath).isDirectory()) {
-    throw new HttpError(404, 'File not found.');
-  }
+const path = require('path'); // Make sure you have this at the top of your file
+ 
+// 1. If the path exists but it is a directory (like visiting the root "/"), 
+// tell it to look for the index.html file inside that directory.
+if (fs.existsSync(assetPath) && fs.statSync(assetPath).isDirectory()) {
+  assetPath = path.join(assetPath, 'index.html');
+}
+ 
+// 2. Now, if the file STILL doesn't exist, throw the error.
+if (!fs.existsSync(assetPath)) {
+  throw new HttpError(404, 'File not found.');
+}
+
 
   const extension = path.extname(assetPath);
   const contentType = STATIC_FILE_TYPES[extension] || 'application/octet-stream';
