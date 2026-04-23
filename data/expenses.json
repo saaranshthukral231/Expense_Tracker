@@ -1,0 +1,32 @@
+{
+  "expenses": [
+    {
+      "id": "bc6c208a-6f83-44e6-81f5-cc96a6afd253",
+      "amountPaise": 388800,
+      "category": "Cabs",
+      "createdAt": "2026-04-23T14:02:10.279Z",
+      "date": "2026-04-23",
+      "description": "Uber Costs"
+    },
+    {
+      "id": "e267447a-88ed-42e1-8ad2-f0d193124775",
+      "amountPaise": 399500,
+      "category": "Shopping",
+      "createdAt": "2026-04-23T14:03:15.287Z",
+      "date": "2026-04-08",
+      "description": "Clothing"
+    }
+  ],
+  "idempotencyKeys": {
+    "40b01981-1382-4631-b0d2-b0a795838d53": {
+      "createdAt": "2026-04-23T14:02:10.279Z",
+      "expenseId": "bc6c208a-6f83-44e6-81f5-cc96a6afd253",
+      "requestHash": "a822ad052f0457ab957557047b58669e8cef14a0a8ea47170e6ae08fbf5ebdf1"
+    },
+    "c0420cb9-4c76-4e4b-aae3-6bb75de4c1a2": {
+      "createdAt": "2026-04-23T14:03:15.287Z",
+      "expenseId": "e267447a-88ed-42e1-8ad2-f0d193124775",
+      "requestHash": "c418b084cd57ab4a89771d2aed62e26b6babc5cf154a21406593c8e63dff9f20"
+    }
+  }
+}
